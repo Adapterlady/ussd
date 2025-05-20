@@ -81,17 +81,18 @@ app.post("/ussd", (req, res) => {
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
+6. Deposit
 n. Next
 00. Main Menu`;
       }
 
       else if (menu[0] === "n" && level === 2) {
         response = `CON More Services:
-6. Transfer Money
-7. Change PIN
-8. Loan Request
-9. Pay Bills
-10. Settings
+7. Transfer Money
+8. Change PIN
+9. Loan Request
+10. Pay Bills
+11. Settings
 0. Back
 00. Main Menu`;
       }
@@ -114,6 +115,7 @@ n. Next
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
+6. Deposit
 n. Next
 00. Main Menu`;
         }
@@ -135,6 +137,7 @@ n. Next
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
+6. Deposit
 n. Next
 00. Main Menu`;
         } else {
@@ -170,7 +173,39 @@ n. Next
         response = `END Call 1234 or email support@service.com`;
       }
 
-      else if (["6", "7", "8", "9", "10"].includes(menu[0])) {
+      // Deposit option
+      else if (menu[0] === "6") {
+        if (level === 2) {
+          response = `CON Enter deposit amount (RWF):
+0. Back
+00. Main Menu`;
+        } else if (menu[1] === "0") {
+          response = `CON Welcome:
+1. My Account
+2. My Phone Number
+3. Buy Airtime
+4. Check Balance
+5. Contact Support
+6. Deposit
+n. Next
+00. Main Menu`;
+        } else {
+          const amount = parseFloat(menu[1]);
+          if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
+
+          db.execute(
+            "UPDATE users SET balance = balance + ? WHERE phone = ?",
+            [amount, phoneNumber],
+            (err, results) => {
+              if (err) return res.send("END Error processing deposit.");
+              return res.send(`END Deposit of RWF ${amount} successful.`);
+            }
+          );
+          return;
+        }
+      }
+
+      else if (["7", "8", "9", "10", "11"].includes(menu[0])) {
         response = `END Feature under development.`;
       }
 
@@ -181,6 +216,7 @@ n. Next
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
+6. Deposit
 n. Next
 00. Main Menu`;
       }
@@ -201,17 +237,18 @@ n. Next
 3. Kugura Amafaranga Y’ifatabuguzi
 4. Kureba Umutungo
 5. Serivisi y’Ubufasha
+6. Kubitsa
 n. Ibikurikira
 00. Tangira bushya`;
       }
 
       else if (menu[0] === "n" && level === 2) {
         response = `CON Serivisi Ziyongera:
-6. Kohereza Amafaranga
-7. Hindura PIN
-8. Gusaba Inguzanyo
-9. Kwishyura Serivisi
-10. Ibindi
+7. Kohereza Amafaranga
+8. Hindura PIN
+9. Gusaba Inguzanyo
+10. Kwishyura Serivisi
+11. Ibindi
 0. Subira inyuma
 00. Tangira bushya`;
       }
@@ -243,7 +280,39 @@ n. Ibikurikira
         response = `END Hamagara 1234 cyangwa andikira support@service.com`;
       }
 
-      else if (["6", "7", "8", "9", "10"].includes(menu[0])) {
+      // Kubitsa (Deposit) option
+      else if (menu[0] === "6") {
+        if (level === 2) {
+          response = `CON Andika amafaranga ushaka kubitsa (RWF):
+0. Subira inyuma
+00. Tangira bushya`;
+        } else if (menu[1] === "0") {
+          response = `CON Murakaza neza:
+1. Konti Yanjye
+2. Nimero Yanjye
+3. Kugura Amafaranga Y’ifatabuguzi
+4. Kureba Umutungo
+5. Serivisi y’Ubufasha
+6. Kubitsa
+n. Ibikurikira
+00. Tangira bushya`;
+        } else {
+          const amount = parseFloat(menu[1]);
+          if (isNaN(amount) || amount <= 0) return res.send("END Umubare winjije si wo.");
+
+          db.execute(
+            "UPDATE users SET balance = balance + ? WHERE phone = ?",
+            [amount, phoneNumber],
+            (err, results) => {
+              if (err) return res.send("END Ntibishobotse kubitsa.");
+              return res.send(`END Kubitsa amafaranga RWF ${amount} byagenze neza.`);
+            }
+          );
+          return;
+        }
+      }
+
+      else if (["7", "8", "9", "10", "11"].includes(menu[0])) {
         response = `END Iyi serivisi iri gutegurwa.`;
       }
 
@@ -254,6 +323,7 @@ n. Ibikurikira
 3. Kugura Amafaranga Y’ifatabuguzi
 4. Kureba Umutungo
 5. Serivisi y’Ubufasha
+6. Kubitsa
 n. Ibikurikira
 00. Tangira bushya`;
       }
