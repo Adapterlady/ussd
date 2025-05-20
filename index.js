@@ -1,19 +1,22 @@
+require('dotenv').config();
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const mysql = require("mysql2");
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Database connection
+// Database connection using environment variables
 const db = mysql.createConnection({
-  host: "mysql-bonfils.alwaysdata.net", // AlwaysData MySQL host
-  user: "bonfils",                      // AlwaysData MySQL username
-  password: "Bonfils@12",         // Your actual password
-  database: "bonfils_ussapp"            // Your database name
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
 });
 
 // Ensure users table exists before starting the server
