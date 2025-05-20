@@ -1,5 +1,6 @@
 const express = require("express");
 const bodyParser = require("body-parser");
+const mysql = require("mysql2");
 
 const app = express();
 const port = 3000;
@@ -7,12 +8,20 @@ const port = 3000;
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+// Database connection
+const db = mysql.createConnection({
+  host: "localhost",
+  user: "root",
+  password: "", // Replace with your actual password
+  database: "ussd_app"
+});
+
+// USSD Endpoint
 app.post("/ussd", (req, res) => {
   const { sessionId, serviceCode, phoneNumber, text } = req.body;
-  let response = "";
-
   const textValue = text.split("*");
   const level = textValue.length;
+  let response = "";
 
   // Language Selection
   if (text === "") {
@@ -21,13 +30,12 @@ app.post("/ussd", (req, res) => {
 2. Kinyarwanda`;
   }
 
-  // English Menu Flow
+  // English Menu
   else if (textValue[0] === "1") {
-    const currentMenu = textValue.slice(1);
+    const menu = textValue.slice(1);
 
-    // Main Menu Page 1
-    if (level === 1 || (level === 2 && currentMenu[0] === "00")) {
-      response = `CON Welcome to Our Service
+    if (level === 1 || (menu[0] === "00" && level === 2)) {
+      response = `CON Welcome
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -37,8 +45,7 @@ n. Next
 00. Main Menu`;
     }
 
-    // Page 2 Menu
-    else if (level === 2 && currentMenu[0] === "n") {
+    else if (menu[0] === "n" && level === 2) {
       response = `CON More Services
 6. Transfer Money
 7. Change PIN
@@ -49,20 +56,19 @@ n. Next
 00. Main Menu`;
     }
 
-    // 1. My Account
-    else if (currentMenu[0] === "1") {
+    else if (menu[0] === "1") {
       if (level === 2) {
         response = `CON Account Info
 1. Account Number
 2. Account Type
 0. Back
 00. Main Menu`;
-      } else if (currentMenu[1] === "1") {
+      } else if (menu[1] === "1") {
         response = `END Your account number is ACC123456`;
-      } else if (currentMenu[1] === "2") {
+      } else if (menu[1] === "2") {
         response = `END Your account type is Savings`;
-      } else if (currentMenu[1] === "0") {
-        response = `CON Welcome to Our Service
+      } else if (menu[1] === "0") {
+        response = `CON Welcome
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -70,24 +76,20 @@ n. Next
 5. Contact Support
 n. Next
 00. Main Menu`;
-      } else {
-        response = `END Invalid input`;
       }
     }
 
-    // 2. Phone Number
-    else if (currentMenu[0] === "2") {
+    else if (menu[0] === "2") {
       response = `END Your phone number is ${phoneNumber}`;
     }
 
-    // 3. Buy Airtime
-    else if (currentMenu[0] === "3") {
+    else if (menu[0] === "3") {
       if (level === 2) {
         response = `CON Enter airtime amount
 0. Back
 00. Main Menu`;
-      } else if (currentMenu[1] === "0") {
-        response = `CON Welcome to Our Service
+      } else if (menu[1] === "0") {
+        response = `CON Welcome
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -96,77 +98,74 @@ n. Next
 n. Next
 00. Main Menu`;
       } else {
-        response = `END You have purchased RWF ${currentMenu[1]} airtime`;
+        const amount = parseFloat(menu[1]);
+        if (isNaN(amount)) {
+          response = `END Invalid amount`;
+        } else {
+          // Update balance
+          db.execute(
+            "UPDATE users SET balance = balance - ? WHERE phone = ?",
+            [amount, phoneNumber],
+            (err, results) => {
+              if (err) {
+                response = `END Error processing request`;
+                res.set("Content-Type", "text/plain");
+                return res.send(response);
+              }
+              response = `END You have purchased RWF ${amount} airtime`;
+              res.set("Content-Type", "text/plain");
+              return res.send(response);
+            }
+          );
+          return;
+        }
       }
     }
 
-    // 4. Check Balance
-    else if (currentMenu[0] === "4") {
-      response = `END Your account balance is RWF 5,000`;
+    else if (menu[0] === "4") {
+      db.execute(
+        "SELECT balance FROM users WHERE phone = ?",
+        [phoneNumber],
+        (err, results) => {
+          if (err || results.length === 0) {
+            response = `END Error retrieving balance`;
+          } else {
+            const balance = results[0].balance;
+            response = `END Your balance is RWF ${balance}`;
+          }
+          res.set("Content-Type", "text/plain");
+          return res.send(response);
+        }
+      );
+      return;
     }
 
-    // 5. Contact Support
-    else if (currentMenu[0] === "5") {
-      response = `END Call 1234 or email help@support.com`;
+    else if (menu[0] === "5") {
+      response = `END Call 1234 or email support@service.com`;
     }
 
-    // 6. Transfer Money
-    else if (currentMenu[0] === "6") {
-      if (level === 2) {
-        response = `CON Enter recipient number
-0. Back
-00. Main Menu`;
-      } else if (currentMenu[1] === "0") {
-        response = `CON More Services
-6. Transfer Money
-7. Change PIN
-8. Loan Request
-9. Pay Utility Bills
-10. Settings
-0. Back
-00. Main Menu`;
-      } else if (level === 3) {
-        response = `CON Enter amount to send`;
-      } else {
-        const recipient = currentMenu[1];
-        const amount = currentMenu[2];
-        response = `END You have sent RWF ${amount} to ${recipient}`;
-      }
+    else if (menu[0] === "6") {
+      response = `END Transfer service coming soon`;
     }
 
-    // 7. Change PIN
-    else if (currentMenu[0] === "7") {
-      if (level === 2) {
-        response = `CON Enter old PIN
-0. Back
-00. Main Menu`;
-      } else if (level === 3) {
-        response = `CON Enter new PIN`;
-      } else if (level === 4) {
-        response = `END PIN changed successfully`;
-      } else {
-        response = `END Invalid input`;
-      }
+    else if (menu[0] === "7") {
+      response = `END PIN change feature coming soon`;
     }
 
-    // 8. Loan Request
-    else if (currentMenu[0] === "8") {
-      response = `END Loan of RWF 10,000 has been requested.`;
+    else if (menu[0] === "8") {
+      response = `END Loan request feature coming soon`;
     }
 
-    // 9. Pay Utility Bills
-    else if (currentMenu[0] === "9") {
-      response = `END Utility bill payment feature coming soon.`;
+    else if (menu[0] === "9") {
+      response = `END Pay bills coming soon`;
     }
 
-    // 10. Settings
-    else if (currentMenu[0] === "10") {
-      response = `END Settings menu under development.`;
+    else if (menu[0] === "10") {
+      response = `END Settings coming soon`;
     }
 
-    // 0. Back from Page 2
-    else if (currentMenu[0] === "0") {
-      response = `CON Welcome to Our Service
+    else if (menu[0] === "0") {
+      response = `CON Welcome
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -174,13 +173,6 @@ n. Next
 5. Contact Support
 n. Next
 00. Main Menu`;
-    }
-
-    // 00. Main Menu
-    else if (currentMenu[0] === "00") {
-      response = `CON Choose language / Hitamo ururimi
-1. English
-2. Kinyarwanda`;
     }
 
     else {
@@ -188,7 +180,7 @@ n. Next
     }
   }
 
-  // Kinyarwanda
+  // Kinyarwanda placeholder
   else if (textValue[0] === "2") {
     response = `END Serivisi z'Ikinyarwanda zirimo gutegurwa. Murakoze.`;
   }
@@ -202,5 +194,5 @@ n. Next
 });
 
 app.listen(port, () => {
-  console.log(`USSD app listening on port ${port}`);
+  console.log(`USSD app running on port ${port}`);
 });
