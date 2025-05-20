@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require("express");
 const bodyParser = require("body-parser");
-const mysql = require("mysql2");
+const mysql = require("mysql2/promise");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -9,103 +9,93 @@ const port = process.env.PORT || 3000;
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// DB connection
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-// Create users table if not exists
-db.execute(
-  `CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    phone VARCHAR(20) NOT NULL UNIQUE,
-    balance DECIMAL(15,2) DEFAULT 0
-  )`,
-  (err) => {
-    if (err) {
-      console.error("Error creating users table:", err);
-      process.exit(1);
-    }
-    console.log("Users table ready.");
-  }
-);
-
-// Create sessions table if not exists
-db.execute(
-  `CREATE TABLE IF NOT EXISTS sessions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    session_id VARCHAR(100) NOT NULL,
-    phone VARCHAR(20) NOT NULL,
-    service_code VARCHAR(50),
-    text TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )`,
-  (err) => {
-    if (err) {
-      console.error("Error creating sessions table:", err);
-      process.exit(1);
-    }
-    console.log("Sessions table ready.");
-    // Start server after both tables are ready
-    app.listen(port, () => {
-      console.log(`USSD app running on port ${port}`);
+// MySQL Connection
+let db;
+(async () => {
+  try {
+    db = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      port: process.env.DB_PORT,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME
     });
+
+    // Create tables
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        phone VARCHAR(20) NOT NULL UNIQUE,
+        balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(100) NOT NULL,
+        phone VARCHAR(20) NOT NULL,
+        service_code VARCHAR(50),
+        text TEXT,
+        action_done VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log("Database and tables ready.");
+    app.listen(port, () => console.log(`USSD app running on port ${port}`));
+  } catch (err) {
+    console.error("Database connection error:", err);
+    process.exit(1);
   }
-);
+})();
 
 // Ensure user exists
-function ensureUserExists(phone, callback) {
-  db.execute("SELECT id FROM users WHERE phone = ?", [phone], (err, results) => {
-    if (err) return callback(err);
-    if (results.length === 0) {
-      db.execute("INSERT INTO users (phone, balance) VALUES (?, 0)", [phone], (insertErr) => callback(insertErr));
-    } else {
-      callback(null);
-    }
-  });
+async function ensureUserExists(phone) {
+  const [rows] = await db.execute("SELECT id FROM users WHERE phone = ?", [phone]);
+  if (rows.length === 0) {
+    await db.execute("INSERT INTO users (phone, balance) VALUES (?, 0)", [phone]);
+  }
 }
 
-// USSD route
-app.post("/ussd", (req, res) => {
+// Store session
+async function storeSession(sessionId, phone, serviceCode, text, action = null) {
+  try {
+    await db.execute(
+      "INSERT INTO sessions (session_id, phone, service_code, text, action_done) VALUES (?, ?, ?, ?, ?)",
+      [sessionId, phone, serviceCode, text, action]
+    );
+  } catch (err) {
+    console.error("Error storing session:", err);
+  }
+}
+
+// USSD Handler
+app.post("/ussd", async (req, res) => {
   const { sessionId, serviceCode, phoneNumber, text } = req.body;
-
-  // Store session
-  db.execute(
-    "INSERT INTO sessions (session_id, phone, service_code, text) VALUES (?, ?, ?, ?)",
-    [sessionId, phoneNumber, serviceCode, text],
-    (err) => {
-      if (err) console.error("Error storing session:", err);
-    }
-  );
-
   const input = text.split("*");
   const level = input.length;
+  const lang = input[0];
 
-  ensureUserExists(phoneNumber, (err) => {
-    if (err) {
-      res.set("Content-Type", "text/plain");
-      return res.send("END Error initializing user.");
-    }
+  await storeSession(sessionId, phoneNumber, serviceCode, text);
+  await ensureUserExists(phoneNumber);
 
-    let response = "";
+  let response = "";
 
-    // Language Selection
-    if (text === "") {
-      response = `CON Choose language / Hitamo ururimi:
+  // LANGUAGES
+  if (text === "") {
+    response = `CON Choose language / Hitamo ururimi:
 1. English
 2. Kinyarwanda`;
-    }
+  }
 
-    // ===== ENGLISH MENU =====
-    else if (input[0] === "1") {
-      const menu = input.slice(1);
+  // ENGLISH MENU
+  else if (lang === "1") {
+    const menu = input.slice(1);
 
-      if (level === 1 || (menu[0] === "00" && level === 2)) {
-        response = `CON Welcome:
+    if (level === 1 || (menu[0] === "00" && level === 2)) {
+      response = `CON Welcome:
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -114,10 +104,10 @@ app.post("/ussd", (req, res) => {
 6. Deposit
 n. Next
 00. Main Menu`;
-      }
+    }
 
-      else if (menu[0] === "n" && level === 2) {
-        response = `CON More Services:
+    else if (menu[0] === "n" && level === 2) {
+      response = `CON More Services:
 7. Transfer Money
 8. Change PIN
 9. Loan Request
@@ -125,250 +115,154 @@ n. Next
 11. Settings
 0. Back
 00. Main Menu`;
-      }
+    }
 
-      else if (menu[0] === "1") {
-        if (level === 2) {
-          response = `CON Account Info:
+    else if (menu[0] === "1") {
+      if (level === 2) {
+        response = `CON Account Info:
 1. Account Number
 2. Account Type
 0. Back
 00. Main Menu`;
-        } else if (menu[1] === "1") {
-          response = `END Your account number is ACC123456`;
-        } else if (menu[1] === "2") {
-          response = `END Your account type is Savings`;
-        } else if (menu[1] === "0") {
-          response = `CON Welcome:
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-6. Deposit
-n. Next
-00. Main Menu`;
-        }
-      }
-
-      else if (menu[0] === "2") {
-        response = `END Your phone number is ${phoneNumber}`;
-      }
-
-      else if (menu[0] === "3") {
-        if (level === 2) {
-          response = `CON Enter airtime amount (RWF):
-0. Back
-00. Main Menu`;
-        } else if (menu[1] === "0") {
-          response = `CON Welcome:
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-6. Deposit
-n. Next
-00. Main Menu`;
-        } else {
-          const amount = parseFloat(menu[1]);
-          if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
-
-          db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber], (err, results) => {
-            if (err || results.length === 0) return res.send("END Error retrieving balance.");
-            const current = results[0].balance;
-            if (current < amount) return res.send("END Insufficient balance.");
-
-            db.execute("UPDATE users SET balance = balance - ? WHERE phone = ?", [amount, phoneNumber], (err2) => {
-              if (err2) return res.send("END Error processing transaction.");
-              return res.send(`END Airtime purchase of RWF ${amount} successful.`);
-            });
-          });
-          return;
-        }
-      }
-
-      else if (menu[0] === "4") {
-        db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber], (err, results) => {
-          if (err || results.length === 0) {
-            return res.send("END Error retrieving balance.");
-          } else {
-            return res.send(`END Your balance is RWF ${results[0].balance}`);
-          }
-        });
-        return;
-      }
-
-      else if (menu[0] === "5") {
-        response = `END Call 1234 or email support@service.com`;
-      }
-
-      // Deposit option
-      else if (menu[0] === "6") {
-        if (level === 2) {
-          response = `CON Enter deposit amount (RWF):
-0. Back
-00. Main Menu`;
-        } else if (menu[1] === "0") {
-          response = `CON Welcome:
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-6. Deposit
-n. Next
-00. Main Menu`;
-        } else {
-          const amount = parseFloat(menu[1]);
-          if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
-
-          db.execute(
-            "UPDATE users SET balance = balance + ? WHERE phone = ?",
-            [amount, phoneNumber],
-            (err, results) => {
-              if (err) return res.send("END Error processing deposit.");
-              return res.send(`END Deposit of RWF ${amount} successful.`);
-            }
-          );
-          return;
-        }
-      }
-
-      else if (["7", "8", "9", "10", "11"].includes(menu[0])) {
-        response = `END Feature under development.`;
-      }
-
-      else if (menu[0] === "0") {
-        response = `CON Welcome:
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-6. Deposit
-n. Next
-00. Main Menu`;
-      }
-
-      else {
-        response = `END Invalid input`;
+      } else if (menu[1] === "1") {
+        response = `END Your account number is ACC123456`;
+      } else if (menu[1] === "2") {
+        response = `END Your account type is Savings`;
       }
     }
 
-    // ===== KINYARWANDA MENU =====
-    else if (input[0] === "2") {
-      const menu = input.slice(1);
+    else if (menu[0] === "2") {
+      response = `END Your phone number is ${phoneNumber}`;
+    }
 
-      if (level === 1 || (menu[0] === "00" && level === 2)) {
-        response = `CON Murakaza neza:
-1. Konti Yanjye
-2. Nimero Yanjye
-3. Kugura Amafaranga Y’ifatabuguzi
-4. Kureba Umutungo
-5. Serivisi y’Ubufasha
-6. Kubitsa
-n. Ibikurikira
-00. Tangira bushya`;
-      }
+    else if (menu[0] === "3") {
+      if (level === 2) {
+        response = `CON Enter airtime amount (RWF):
+0. Back
+00. Main Menu`;
+      } else {
+        const amount = parseFloat(menu[1]);
+        if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
 
-      else if (menu[0] === "n" && level === 2) {
-        response = `CON Serivisi Ziyongera:
-7. Kohereza Amafaranga
-8. Hindura PIN
-9. Gusaba Inguzanyo
-10. Kwishyura Serivisi
-11. Ibindi
-0. Subira inyuma
-00. Tangira bushya`;
-      }
+        const [[user]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
+        if (!user || user.balance < amount) return res.send("END Insufficient balance.");
 
-      else if (menu[0] === "1") {
-        response = `END Nimero ya konti ni ACC123456`;
-      }
+        await db.execute("UPDATE users SET balance = balance - ? WHERE phone = ?", [amount, phoneNumber]);
+        await storeSession(sessionId, phoneNumber, serviceCode, text, "buy_airtime");
 
-      else if (menu[0] === "2") {
-        response = `END Nimero yawe ni ${phoneNumber}`;
-      }
-
-      else if (menu[0] === "3") {
-        response = `END Serivisi yo kugura amafaranga iri gutegurwa.`;
-      }
-
-      else if (menu[0] === "4") {
-        db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber], (err, results) => {
-          if (err || results.length === 0) {
-            return res.send("END Ntibishobotse kubona umutungo.");
-          } else {
-            return res.send(`END Umutungo wawe ni RWF ${results[0].balance}`);
-          }
-        });
-        return;
-      }
-
-      else if (menu[0] === "5") {
-        response = `END Hamagara 1234 cyangwa andikira support@service.com`;
-      }
-
-      // Kubitsa (Deposit) option
-      else if (menu[0] === "6") {
-        if (level === 2) {
-          response = `CON Andika amafaranga ushaka kubitsa (RWF):
-0. Subira inyuma
-00. Tangira bushya`;
-        } else if (menu[1] === "0") {
-          response = `CON Murakaza neza:
-1. Konti Yanjye
-2. Nimero Yanjye
-3. Kugura Amafaranga Y’ifatabuguzi
-4. Kureba Umutungo
-5. Serivisi y’Ubufasha
-6. Kubitsa
-n. Ibikurikira
-00. Tangira bushya`;
-        } else {
-          const amount = parseFloat(menu[1]);
-          if (isNaN(amount) || amount <= 0) return res.send("END Umubare winjije si wo.");
-
-          db.execute(
-            "UPDATE users SET balance = balance + ? WHERE phone = ?",
-            [amount, phoneNumber],
-            (err, results) => {
-              if (err) return res.send("END Ntibishobotse kubitsa.");
-              return res.send(`END Kubitsa amafaranga RWF ${amount} byagenze neza.`);
-            }
-          );
-          return;
-        }
-      }
-
-      else if (["7", "8", "9", "10", "11"].includes(menu[0])) {
-        response = `END Iyi serivisi iri gutegurwa.`;
-      }
-
-      else if (menu[0] === "0") {
-        response = `CON Murakaza neza:
-1. Konti Yanjye
-2. Nimero Yanjye
-3. Kugura Amafaranga Y’ifatabuguzi
-4. Kureba Umutungo
-5. Serivisi y’Ubufasha
-6. Kubitsa
-n. Ibikurikira
-00. Tangira bushya`;
-      }
-
-      else {
-        response = `END Ibyinjiye si byo`;
+        return res.send(`END Airtime purchase of RWF ${amount} successful.`);
       }
     }
 
-    // Invalid language choice
+    else if (menu[0] === "4") {
+      const [[user]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
+      return res.send(`END Your balance is RWF ${user.balance}`);
+    }
+
+    else if (menu[0] === "5") {
+      response = `END Call 1234 or email support@service.com`;
+    }
+
+    else if (menu[0] === "6") {
+      if (level === 2) {
+        response = `CON Enter deposit amount (RWF):
+0. Back
+00. Main Menu`;
+      } else {
+        const amount = parseFloat(menu[1]);
+        if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
+
+        await db.execute("UPDATE users SET balance = balance + ? WHERE phone = ?", [amount, phoneNumber]);
+        await storeSession(sessionId, phoneNumber, serviceCode, text, "deposit");
+
+        return res.send(`END Deposit of RWF ${amount} successful.`);
+      }
+    }
+
+    else if (["7", "8", "9", "10", "11"].includes(menu[0])) {
+      response = `END Feature under development.`;
+    }
+
+    else if (menu[0] === "0") {
+      response = `CON Welcome:
+1. My Account
+2. My Phone Number
+3. Buy Airtime
+4. Check Balance
+5. Contact Support
+6. Deposit
+n. Next
+00. Main Menu`;
+    }
+
     else {
       response = `END Invalid input`;
     }
+  }
 
-    res.set("Content-Type", "text/plain");
-    res.send(response);
-  });
+  // KINYARWANDA MENU
+  else if (lang === "2") {
+    const menu = input.slice(1);
+
+    if (level === 1 || (menu[0] === "00" && level === 2)) {
+      response = `CON Murakaza neza:
+1. Konti Yanjye
+2. Nimero Yanjye
+3. Kugura Amafaranga Y’ifatabuguzi
+4. Kureba Umutungo
+5. Serivisi y’Ubufasha
+6. Kubitsa
+n. Ibikurikira
+00. Tangira bushya`;
+    }
+
+    else if (menu[0] === "1") {
+      response = `END Nimero ya konti ni ACC123456`;
+    }
+
+    else if (menu[0] === "2") {
+      response = `END Nimero yawe ni ${phoneNumber}`;
+    }
+
+    else if (menu[0] === "3") {
+      response = `END Serivisi yo kugura amafaranga iri gutegurwa.`;
+    }
+
+    else if (menu[0] === "4") {
+      const [[user]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
+      return res.send(`END Umutungo wawe ni RWF ${user.balance}`);
+    }
+
+    else if (menu[0] === "5") {
+      response = `END Hamagara 1234 cyangwa andikira support@service.com`;
+    }
+
+    else if (menu[0] === "6") {
+      if (level === 2) {
+        response = `CON Andika amafaranga ushaka kubitsa (RWF):
+0. Subira inyuma
+00. Tangira bushya`;
+      } else {
+        const amount = parseFloat(menu[1]);
+        if (isNaN(amount) || amount <= 0) return res.send("END Umubare winjije si wo.");
+
+        await db.execute("UPDATE users SET balance = balance + ? WHERE phone = ?", [amount, phoneNumber]);
+        await storeSession(sessionId, phoneNumber, serviceCode, text, "deposit");
+
+        return res.send(`END Kubitsa RWF ${amount} byagenze neza.`);
+      }
+    }
+
+    else {
+      response = `END Ibyinjiye si byo`;
+    }
+  }
+
+  // Invalid input
+  else {
+    response = `END Invalid input`;
+  }
+
+  res.set("Content-Type", "text/plain");
+  res.send(response);
 });
