@@ -31,6 +31,26 @@ db.execute(
       process.exit(1);
     }
     console.log("Users table ready.");
+  }
+);
+
+// Create sessions table if not exists
+db.execute(
+  `CREATE TABLE IF NOT EXISTS sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    service_code VARCHAR(50),
+    text TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )`,
+  (err) => {
+    if (err) {
+      console.error("Error creating sessions table:", err);
+      process.exit(1);
+    }
+    console.log("Sessions table ready.");
+    // Start server after both tables are ready
     app.listen(port, () => {
       console.log(`USSD app running on port ${port}`);
     });
@@ -52,6 +72,16 @@ function ensureUserExists(phone, callback) {
 // USSD route
 app.post("/ussd", (req, res) => {
   const { sessionId, serviceCode, phoneNumber, text } = req.body;
+
+  // Store session
+  db.execute(
+    "INSERT INTO sessions (session_id, phone, service_code, text) VALUES (?, ?, ?, ?)",
+    [sessionId, phoneNumber, serviceCode, text],
+    (err) => {
+      if (err) console.error("Error storing session:", err);
+    }
+  );
+
   const input = text.split("*");
   const level = input.length;
 
