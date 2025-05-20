@@ -10,11 +10,32 @@ app.use(bodyParser.json());
 
 // Database connection
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "", // Replace with your actual password
-  database: "ussd_app"
+  host: "mysql-bonfils.alwaysdata.net", // AlwaysData MySQL host
+  user: "bonfils",                      // AlwaysData MySQL username
+  password: "Bonfils@Kigali12",         // Your actual password
+  database: "bonfils_ussapp"            // Your database name
 });
+
+// Ensure users table exists before starting the server
+db.execute(
+  `CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    phone VARCHAR(20) NOT NULL UNIQUE,
+    balance DECIMAL(15,2) DEFAULT 0
+  )`,
+  (err) => {
+    if (err) {
+      console.error("Error creating users table:", err);
+      process.exit(1);
+    } else {
+      console.log("Users table ready.");
+      // Start server after table check
+      app.listen(port, () => {
+        console.log(`USSD app running on port ${port}`);
+      });
+    }
+  }
+);
 
 // USSD Endpoint
 app.post("/ussd", (req, res) => {
@@ -191,8 +212,4 @@ n. Next
 
   res.set("Content-Type", "text/plain");
   res.send(response);
-});
-
-app.listen(port, () => {
-  console.log(`USSD app running on port ${port}`);
 });
