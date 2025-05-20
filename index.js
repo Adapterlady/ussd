@@ -9,141 +9,137 @@ app.use(bodyParser.json());
 
 app.post("/ussd", (req, res) => {
   const { sessionId, serviceCode, phoneNumber, text } = req.body;
-
   let response = "";
-  const textValue = text.split("*");
 
-  // Language selection
+  const textValue = text.split("*");
+  const level = textValue.length;
+
+  // Language Selection
   if (text === "") {
     response = `CON Choose language / Hitamo ururimi
 1. English
 2. Kinyarwanda`;
   }
 
-  // English language selected
+  // English Menu Flow
   else if (textValue[0] === "1") {
-    const level = textValue.length;
+    const currentMenu = textValue.slice(1);
 
-    if (level === 1) {
+    // Main Menu Page 1
+    if (level === 1 || (level === 2 && currentMenu[0] === "00")) {
       response = `CON Welcome to Our Service
 1. My Account
 2. My Phone Number
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
-6. Transfer Money
-7. Change PIN
 n. Next
-0. Back`;
+00. Main Menu`;
     }
 
-    // My Account
-    else if (textValue[1] === "1") {
+    // Page 2 Menu
+    else if (level === 2 && currentMenu[0] === "n") {
+      response = `CON More Services
+6. Transfer Money
+7. Change PIN
+8. Loan Request
+9. Pay Utility Bills
+10. Settings
+0. Back
+00. Main Menu`;
+    }
+
+    // 1. My Account
+    else if (currentMenu[0] === "1") {
       if (level === 2) {
         response = `CON Account Info
 1. Account Number
 2. Account Type
-0. Back`;
-      } else if (textValue[2] === "1") {
+0. Back
+00. Main Menu`;
+      } else if (currentMenu[1] === "1") {
         response = `END Your account number is ACC123456`;
-      } else if (textValue[2] === "2") {
+      } else if (currentMenu[1] === "2") {
         response = `END Your account type is Savings`;
-      } else if (textValue[2] === "0") {
+      } else if (currentMenu[1] === "0") {
         response = `CON Welcome to Our Service
 1. My Account
 2. My Phone Number
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
-6. Transfer Money
-7. Change PIN
 n. Next
-0. Back`;
+00. Main Menu`;
       } else {
         response = `END Invalid input`;
       }
     }
 
-    // My Phone Number
-    else if (textValue[1] === "2") {
+    // 2. Phone Number
+    else if (currentMenu[0] === "2") {
       response = `END Your phone number is ${phoneNumber}`;
     }
 
-    // Buy Airtime
-    else if (textValue[1] === "3") {
+    // 3. Buy Airtime
+    else if (currentMenu[0] === "3") {
       if (level === 2) {
-        response = `CON Enter amount of airtime
-0. Back`;
-      } else if (textValue[2] === "0") {
+        response = `CON Enter airtime amount
+0. Back
+00. Main Menu`;
+      } else if (currentMenu[1] === "0") {
         response = `CON Welcome to Our Service
 1. My Account
 2. My Phone Number
 3. Buy Airtime
 4. Check Balance
 5. Contact Support
-6. Transfer Money
-7. Change PIN
 n. Next
-0. Back`;
+00. Main Menu`;
       } else {
-        const amount = textValue[2];
-        response = `END You have purchased RWF ${amount} airtime`;
+        response = `END You have purchased RWF ${currentMenu[1]} airtime`;
       }
     }
 
-    // Check Balance
-    else if (textValue[1] === "4") {
+    // 4. Check Balance
+    else if (currentMenu[0] === "4") {
       response = `END Your account balance is RWF 5,000`;
     }
 
-    // Contact Support
-    else if (textValue[1] === "5") {
-      response = `END For support, call 1234 or email help@support.com`;
+    // 5. Contact Support
+    else if (currentMenu[0] === "5") {
+      response = `END Call 1234 or email help@support.com`;
     }
 
-    // Transfer Money
-    else if (textValue[1] === "6") {
+    // 6. Transfer Money
+    else if (currentMenu[0] === "6") {
       if (level === 2) {
-        response = `CON Enter recipient phone number
-0. Back`;
-      } else if (textValue[2] === "0") {
-        response = `CON Welcome to Our Service
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
+        response = `CON Enter recipient number
+0. Back
+00. Main Menu`;
+      } else if (currentMenu[1] === "0") {
+        response = `CON More Services
 6. Transfer Money
 7. Change PIN
-n. Next
-0. Back`;
+8. Loan Request
+9. Pay Utility Bills
+10. Settings
+0. Back
+00. Main Menu`;
       } else if (level === 3) {
         response = `CON Enter amount to send`;
-      } else if (level === 4) {
-        const recipient = textValue[2];
-        const amount = textValue[3];
-        response = `END You have sent RWF ${amount} to ${recipient}`;
       } else {
-        response = `END Invalid transfer input`;
+        const recipient = currentMenu[1];
+        const amount = currentMenu[2];
+        response = `END You have sent RWF ${amount} to ${recipient}`;
       }
     }
 
-    // Change PIN
-    else if (textValue[1] === "7") {
+    // 7. Change PIN
+    else if (currentMenu[0] === "7") {
       if (level === 2) {
         response = `CON Enter old PIN
-0. Back`;
-      } else if (textValue[2] === "0") {
-        response = `CON Welcome to Our Service
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-6. Transfer Money
-7. Change PIN
-n. Next
-0. Back`;
+0. Back
+00. Main Menu`;
       } else if (level === 3) {
         response = `CON Enter new PIN`;
       } else if (level === 4) {
@@ -153,13 +149,35 @@ n. Next
       }
     }
 
-    // Next page placeholder
-    else if (textValue[1] === "n") {
-      response = `END No more services available`;
+    // 8. Loan Request
+    else if (currentMenu[0] === "8") {
+      response = `END Loan of RWF 10,000 has been requested.`;
     }
 
-    // Back to language select
-    else if (textValue[1] === "0") {
+    // 9. Pay Utility Bills
+    else if (currentMenu[0] === "9") {
+      response = `END Utility bill payment feature coming soon.`;
+    }
+
+    // 10. Settings
+    else if (currentMenu[0] === "10") {
+      response = `END Settings menu under development.`;
+    }
+
+    // 0. Back from Page 2
+    else if (currentMenu[0] === "0") {
+      response = `CON Welcome to Our Service
+1. My Account
+2. My Phone Number
+3. Buy Airtime
+4. Check Balance
+5. Contact Support
+n. Next
+00. Main Menu`;
+    }
+
+    // 00. Main Menu
+    else if (currentMenu[0] === "00") {
       response = `CON Choose language / Hitamo ururimi
 1. English
 2. Kinyarwanda`;
@@ -170,12 +188,11 @@ n. Next
     }
   }
 
-  // Kinyarwanda selected
+  // Kinyarwanda
   else if (textValue[0] === "2") {
     response = `END Serivisi z'Ikinyarwanda zirimo gutegurwa. Murakoze.`;
   }
 
-  // Invalid base input
   else {
     response = `END Invalid input`;
   }
