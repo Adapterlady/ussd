@@ -12,7 +12,7 @@ app.use(bodyParser.json());
 const db = mysql.createConnection({
   host: "mysql-bonfils.alwaysdata.net", // AlwaysData MySQL host
   user: "bonfils",                      // AlwaysData MySQL username
-  password: "Bonfils@Kigali12",         // Your actual password
+  password: "Bonfils@12",         // Your actual password
   database: "bonfils_ussapp"            // Your database name
 });
 
