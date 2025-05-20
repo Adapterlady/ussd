@@ -11,7 +11,6 @@ app.use(bodyParser.json());
 
 let db;
 
-// Initialize DB connection and tables
 (async () => {
   try {
     db = await mysql.createConnection({
@@ -51,7 +50,6 @@ let db;
   }
 })();
 
-// Utility: Ensure user record exists
 async function ensureUser(phone) {
   const [rows] = await db.execute("SELECT id FROM users WHERE phone = ?", [phone]);
   if (rows.length === 0) {
@@ -59,7 +57,6 @@ async function ensureUser(phone) {
   }
 }
 
-// Utility: Save session
 async function saveSession(sessionId, phone, serviceCode, text, action = null) {
   try {
     await db.execute(
@@ -71,7 +68,6 @@ async function saveSession(sessionId, phone, serviceCode, text, action = null) {
   }
 }
 
-// USSD Handler
 app.post("/ussd", async (req, res) => {
   const { sessionId, serviceCode, phoneNumber, text } = req.body;
   const input = text.trim().split("*");
@@ -83,22 +79,17 @@ app.post("/ussd", async (req, res) => {
 
   let response = "";
 
-  // LANGUAGE CHOICE
   if (text === "") {
-    return res.send(`CON Choose language / Hitamo ururimi:
+    // Start of session: language selection
+    response = `CON Choose language / Hitamo ururimi:
 1. English
-2. Kinyarwanda`);
+2. Kinyarwanda`;
+    return res.send(response);
   }
 
-  // ENGLISH FLOW
-  if (lang === "1") {
-    const menu = input.slice(1);
-
-    switch (menu[0]) {
-      case undefined:
-      case "00":
-      case "0":
-        response = `CON Welcome:
+  // Helper to send Main Menu English
+  function mainMenuEng() {
+    return `CON Welcome:
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -107,6 +98,53 @@ app.post("/ussd", async (req, res) => {
 6. Deposit
 n. Next
 00. Main Menu`;
+  }
+
+  // Helper to send More Services English
+  function moreServicesEng() {
+    return `CON More Services:
+7. Transfer Money
+8. Change PIN
+9. Loan Request
+10. Pay Bills
+11. Settings
+0. Back
+00. Main Menu`;
+  }
+
+  // Helper to send Main Menu Kinyarwanda
+  function mainMenuKiny() {
+    return `CON Murakaza neza:
+1. Konti Yanjye
+2. Nimero Yanjye
+3. Kugura Amafaranga Y’ifatabuguzi
+4. Kureba Umutungo
+5. Serivisi y’Ubufasha
+6. Kubitsa
+n. Ibikurikira
+00. Tangira bushya`;
+  }
+
+  if (lang === "1") {
+    // English flow
+    const menu = input.slice(1);
+
+    // If user presses '00' anywhere, restart to main menu
+    if (menu[0] === "00") {
+      response = mainMenuEng();
+      return res.send(response);
+    }
+
+    // Handle Back option in More Services menu
+    if (menu[0] === "0") {
+      response = mainMenuEng();
+      return res.send(response);
+    }
+
+    switch (menu[0]) {
+      case undefined:
+      case "":
+        response = mainMenuEng();
         break;
 
       case "1": // My Account
@@ -120,57 +158,82 @@ n. Next
           response = `END Your account number is ACC123456`;
         } else if (menu[1] === "2") {
           response = `END Your account type is Savings`;
+        } else if (menu[1] === "0") {
+          response = mainMenuEng();
+        } else if (menu[1] === "00") {
+          response = mainMenuEng();
+        } else {
+          response = `END Invalid input`;
         }
         break;
 
-      case "2": // Phone Number
+      case "2": // My Phone Number
         response = `END Your phone number is ${phoneNumber}`;
         break;
 
       case "3": // Buy Airtime
         if (level === 2) {
-          response = `CON Enter airtime amount (RWF):`;
+          response = `CON Enter airtime amount (RWF):
+0. Back
+00. Main Menu`;
+        } else if (menu[1] === "0") {
+          response = mainMenuEng();
+        } else if (menu[1] === "00") {
+          response = mainMenuEng();
         } else {
           const amount = parseFloat(menu[1]);
-          if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
+          if (isNaN(amount) || amount <= 0) {
+            response = "END Invalid amount.";
+            return res.send(response);
+          }
           const [[user]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
-          if (!user || user.balance < amount) return res.send("END Insufficient balance.");
+          if (!user || user.balance < amount) {
+            response = "END Insufficient balance.";
+            return res.send(response);
+          }
 
           await db.execute("UPDATE users SET balance = balance - ? WHERE phone = ?", [amount, phoneNumber]);
           await saveSession(sessionId, phoneNumber, serviceCode, text, "buy_airtime");
-          return res.send(`END Airtime purchase of RWF ${amount} successful.`);
+
+          response = `END Airtime purchase of RWF ${amount} successful.`;
         }
         break;
 
       case "4": // Check Balance
-        const [[userBal]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
-        return res.send(`END Your balance is RWF ${userBal.balance}`);
-      
-      case "5": // Support
+        {
+          const [[userBal]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
+          response = `END Your balance is RWF ${userBal.balance}`;
+        }
+        break;
+
+      case "5": // Contact Support
         response = `END Call 1234 or email support@service.com`;
         break;
 
       case "6": // Deposit
         if (level === 2) {
-          response = `CON Enter deposit amount (RWF):`;
+          response = `CON Enter deposit amount (RWF):
+0. Back
+00. Main Menu`;
+        } else if (menu[1] === "0") {
+          response = mainMenuEng();
+        } else if (menu[1] === "00") {
+          response = mainMenuEng();
         } else {
           const amount = parseFloat(menu[1]);
-          if (isNaN(amount) || amount <= 0) return res.send("END Invalid amount.");
+          if (isNaN(amount) || amount <= 0) {
+            response = "END Invalid amount.";
+            return res.send(response);
+          }
           await db.execute("UPDATE users SET balance = balance + ? WHERE phone = ?", [amount, phoneNumber]);
           await saveSession(sessionId, phoneNumber, serviceCode, text, "deposit");
-          return res.send(`END Deposit of RWF ${amount} successful.`);
+
+          response = `END Deposit of RWF ${amount} successful.`;
         }
         break;
 
-      case "n":
-        response = `CON More Services:
-7. Transfer Money
-8. Change PIN
-9. Loan Request
-10. Pay Bills
-11. Settings
-0. Back
-00. Main Menu`;
+      case "n": // More Services
+        response = moreServicesEng();
         break;
 
       case "7":
@@ -185,23 +248,21 @@ n. Next
         response = `END Invalid input.`;
     }
 
-  // KINYARWANDA FLOW
+    return res.send(response);
   } else if (lang === "2") {
+    // Kinyarwanda flow
     const menu = input.slice(1);
+
+    // Restart menu
+    if (menu[0] === "00") {
+      response = mainMenuKiny();
+      return res.send(response);
+    }
 
     switch (menu[0]) {
       case undefined:
-      case "00":
-      case "0":
-        response = `CON Murakaza neza:
-1. Konti Yanjye
-2. Nimero Yanjye
-3. Kugura Amafaranga Y’ifatabuguzi
-4. Kureba Umutungo
-5. Serivisi y’Ubufasha
-6. Kubitsa
-n. Ibikurikira
-00. Tangira bushya`;
+      case "":
+        response = mainMenuKiny();
         break;
 
       case "1":
@@ -217,32 +278,45 @@ n. Ibikurikira
         break;
 
       case "4":
-        const [[userK]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
-        return res.send(`END Umutungo wawe ni RWF ${userK.balance}`);
-      
+        {
+          const [[userK]] = await db.execute("SELECT balance FROM users WHERE phone = ?", [phoneNumber]);
+          response = `END Umutungo wawe ni RWF ${userK.balance}`;
+        }
+        break;
+
       case "5":
         response = `END Hamagara 1234 cyangwa andikira support@service.com`;
         break;
 
       case "6":
         if (level === 2) {
-          response = `CON Andika amafaranga ushaka kubitsa (RWF):`;
+          response = `CON Andika amafaranga ushaka kubitsa (RWF):
+0. Subira inyuma
+00. Tangira bushya`;
+        } else if (menu[1] === "0") {
+          response = mainMenuKiny();
+        } else if (menu[1] === "00") {
+          response = mainMenuKiny();
         } else {
           const amount = parseFloat(menu[1]);
-          if (isNaN(amount) || amount <= 0) return res.send("END Umubare winjije si wo.");
+          if (isNaN(amount) || amount <= 0) {
+            response = "END Umubare winjije si wo.";
+            return res.send(response);
+          }
           await db.execute("UPDATE users SET balance = balance + ? WHERE phone = ?", [amount, phoneNumber]);
           await saveSession(sessionId, phoneNumber, serviceCode, text, "deposit");
-          return res.send(`END Kubitsa RWF ${amount} byagenze neza.`);
+
+          response = `END Kubitsa RWF ${amount} byagenze neza.`;
         }
         break;
 
       default:
         response = `END Ibyinjiye si byo.`;
     }
+
+    return res.send(response);
   } else {
     response = `END Invalid input`;
+    return res.send(response);
   }
-
-  res.set("Content-Type", "text/plain");
-  res.send(response);
 });
