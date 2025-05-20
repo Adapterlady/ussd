@@ -10,24 +10,17 @@ app.use(bodyParser.json());
 app.post("/ussd", (req, res) => {
   const { sessionId, serviceCode, phoneNumber, text } = req.body;
   let response = "";
-
   const textValue = text.split("*");
   const level = textValue.length;
 
-  // Language Selection
+  // Language selection menu
   if (text === "") {
-    response = `CON Choose language / Hitamo ururimi
-1. English
-2. Kinyarwanda`;
+    response = `CON Hitamo ururimi / Choose language:
+1. Icyongereza
+2. Ikinyarwanda`;
   }
 
-  // English Menu Flow
-  else if (textValue[0] === "1") {
-    const currentMenu = textValue.slice(1);
-
-    // Main Menu Page 1
-    if (level === 1 || (level === 2 && currentMenu[0] === "00")) {
-      response = `CON Welcome to Our Service
+  const mainMenuEN = `CON Welcome to Our Service
 1. My Account
 2. My Phone Number
 3. Buy Airtime
@@ -35,11 +28,8 @@ app.post("/ussd", (req, res) => {
 5. Contact Support
 n. Next
 00. Main Menu`;
-    }
 
-    // Page 2 Menu
-    else if (level === 2 && currentMenu[0] === "n") {
-      response = `CON More Services
+  const nextMenuEN = `CON More Services
 6. Transfer Money
 7. Change PIN
 8. Loan Request
@@ -47,150 +37,179 @@ n. Next
 10. Settings
 0. Back
 00. Main Menu`;
-    }
 
-    // 1. My Account
-    else if (currentMenu[0] === "1") {
+  const mainMenuRW = `CON Murakaza neza kuri serivisi zacu
+1. Konti yanjye
+2. Nimero yanjye
+3. Kugura umuyoboro
+4. Kureba amafaranga asigaye
+5. Kuvugana n'ubufasha
+n. Ibikurikira
+00. Ahabanza`;
+
+  const nextMenuRW = `CON Serivisi zindi:
+6. Kohereza amafaranga
+7. Guhindura PIN
+8. Gusaba inguzanyo
+9. Kwishyura fagitire
+10. Igenamiterere
+0. Subira inyuma
+00. Ahabanza`;
+
+  const lang = textValue[0]; // 1 or 2
+
+  // English Flow
+  if (lang === "1") {
+    const menu = textValue.slice(1);
+
+    if (level === 1 || (level === 2 && menu[0] === "00")) {
+      response = mainMenuEN;
+    } else if (level === 2 && menu[0] === "n") {
+      response = nextMenuEN;
+    } else if (menu[0] === "1") {
       if (level === 2) {
         response = `CON Account Info
 1. Account Number
 2. Account Type
 0. Back
 00. Main Menu`;
-      } else if (currentMenu[1] === "1") {
+      } else if (menu[1] === "1") {
         response = `END Your account number is ACC123456`;
-      } else if (currentMenu[1] === "2") {
+      } else if (menu[1] === "2") {
         response = `END Your account type is Savings`;
-      } else if (currentMenu[1] === "0") {
-        response = `CON Welcome to Our Service
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-n. Next
-00. Main Menu`;
+      } else if (menu[1] === "0") {
+        response = mainMenuEN;
       } else {
         response = `END Invalid input`;
       }
-    }
-
-    // 2. Phone Number
-    else if (currentMenu[0] === "2") {
+    } else if (menu[0] === "2") {
       response = `END Your phone number is ${phoneNumber}`;
-    }
-
-    // 3. Buy Airtime
-    else if (currentMenu[0] === "3") {
+    } else if (menu[0] === "3") {
       if (level === 2) {
         response = `CON Enter airtime amount
 0. Back
 00. Main Menu`;
-      } else if (currentMenu[1] === "0") {
-        response = `CON Welcome to Our Service
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-n. Next
-00. Main Menu`;
+      } else if (menu[1] === "0") {
+        response = mainMenuEN;
       } else {
-        response = `END You have purchased RWF ${currentMenu[1]} airtime`;
+        response = `END You purchased RWF ${menu[1]} airtime`;
       }
-    }
-
-    // 4. Check Balance
-    else if (currentMenu[0] === "4") {
-      response = `END Your account balance is RWF 5,000`;
-    }
-
-    // 5. Contact Support
-    else if (currentMenu[0] === "5") {
+    } else if (menu[0] === "4") {
+      response = `END Your balance is RWF 5,000`;
+    } else if (menu[0] === "5") {
       response = `END Call 1234 or email help@support.com`;
-    }
-
-    // 6. Transfer Money
-    else if (currentMenu[0] === "6") {
+    } else if (menu[0] === "6") {
       if (level === 2) {
         response = `CON Enter recipient number
 0. Back
 00. Main Menu`;
-      } else if (currentMenu[1] === "0") {
-        response = `CON More Services
-6. Transfer Money
-7. Change PIN
-8. Loan Request
-9. Pay Utility Bills
-10. Settings
-0. Back
-00. Main Menu`;
+      } else if (menu[1] === "0") {
+        response = nextMenuEN;
       } else if (level === 3) {
-        response = `CON Enter amount to send`;
+        response = `CON Enter amount`;
       } else {
-        const recipient = currentMenu[1];
-        const amount = currentMenu[2];
-        response = `END You have sent RWF ${amount} to ${recipient}`;
+        response = `END You sent RWF ${menu[2]} to ${menu[1]}`;
       }
-    }
-
-    // 7. Change PIN
-    else if (currentMenu[0] === "7") {
+    } else if (menu[0] === "7") {
       if (level === 2) {
-        response = `CON Enter old PIN
-0. Back
-00. Main Menu`;
+        response = `CON Enter old PIN`;
       } else if (level === 3) {
         response = `CON Enter new PIN`;
-      } else if (level === 4) {
-        response = `END PIN changed successfully`;
       } else {
-        response = `END Invalid input`;
+        response = `END PIN changed successfully`;
       }
-    }
-
-    // 8. Loan Request
-    else if (currentMenu[0] === "8") {
-      response = `END Loan of RWF 10,000 has been requested.`;
-    }
-
-    // 9. Pay Utility Bills
-    else if (currentMenu[0] === "9") {
-      response = `END Utility bill payment feature coming soon.`;
-    }
-
-    // 10. Settings
-    else if (currentMenu[0] === "10") {
-      response = `END Settings menu under development.`;
-    }
-
-    // 0. Back from Page 2
-    else if (currentMenu[0] === "0") {
-      response = `CON Welcome to Our Service
-1. My Account
-2. My Phone Number
-3. Buy Airtime
-4. Check Balance
-5. Contact Support
-n. Next
-00. Main Menu`;
-    }
-
-    // 00. Main Menu
-    else if (currentMenu[0] === "00") {
-      response = `CON Choose language / Hitamo ururimi
-1. English
-2. Kinyarwanda`;
-    }
-
-    else {
+    } else if (menu[0] === "8") {
+      response = `END You requested a loan of RWF 10,000`;
+    } else if (menu[0] === "9") {
+      response = `END Utility bill payment coming soon`;
+    } else if (menu[0] === "10") {
+      response = `END Settings under construction`;
+    } else if (menu[0] === "0") {
+      response = mainMenuEN;
+    } else if (menu[0] === "00") {
+      response = `CON Hitamo ururimi / Choose language:
+1. Icyongereza
+2. Ikinyarwanda`;
+    } else {
       response = `END Invalid input`;
     }
   }
 
-  // Kinyarwanda
-  else if (textValue[0] === "2") {
-    response = `END Serivisi z'Ikinyarwanda zirimo gutegurwa. Murakoze.`;
+  // Kinyarwanda Flow
+  else if (lang === "2") {
+    const menu = textValue.slice(1);
+
+    if (level === 1 || (level === 2 && menu[0] === "00")) {
+      response = mainMenuRW;
+    } else if (level === 2 && menu[0] === "n") {
+      response = nextMenuRW;
+    } else if (menu[0] === "1") {
+      if (level === 2) {
+        response = `CON Amakuru ya konti
+1. Nimero ya konti
+2. Ubwoko bwa konti
+0. Subira inyuma
+00. Ahabanza`;
+      } else if (menu[1] === "1") {
+        response = `END Nimero ya konti yawe ni ACC123456`;
+      } else if (menu[1] === "2") {
+        response = `END Ubwoko bwa konti ni Iyigenga`;
+      } else if (menu[1] === "0") {
+        response = mainMenuRW;
+      } else {
+        response = `END Ibyinjijwe si byo`;
+      }
+    } else if (menu[0] === "2") {
+      response = `END Nimero yawe ni ${phoneNumber}`;
+    } else if (menu[0] === "3") {
+      if (level === 2) {
+        response = `CON Andika amafaranga yo kugura
+0. Subira inyuma
+00. Ahabanza`;
+      } else if (menu[1] === "0") {
+        response = mainMenuRW;
+      } else {
+        response = `END Waguze RWF ${menu[1]} y'umuyoboro`;
+      }
+    } else if (menu[0] === "4") {
+      response = `END Asigaye kuri konti yawe ni RWF 5,000`;
+    } else if (menu[0] === "5") {
+      response = `END Hamagara 1234 cyangwa andikira kuri help@support.com`;
+    } else if (menu[0] === "6") {
+      if (level === 2) {
+        response = `CON Andika nimero woherezaho
+0. Subira inyuma
+00. Ahabanza`;
+      } else if (menu[1] === "0") {
+        response = nextMenuRW;
+      } else if (level === 3) {
+        response = `CON Andika amafaranga wohereza`;
+      } else {
+        response = `END Wohereje RWF ${menu[2]} kuri ${menu[1]}`;
+      }
+    } else if (menu[0] === "7") {
+      if (level === 2) {
+        response = `CON Andika PIN ya kera`;
+      } else if (level === 3) {
+        response = `CON Andika PIN nshya`;
+      } else {
+        response = `END PIN yahinduwe neza`;
+      }
+    } else if (menu[0] === "8") {
+      response = `END Wasabye inguzanyo ya RWF 10,000`;
+    } else if (menu[0] === "9") {
+      response = `END Kwishyura fagitire biri gutegurwa`;
+    } else if (menu[0] === "10") {
+      response = `END Igenamiterere rirategurwa`;
+    } else if (menu[0] === "0") {
+      response = mainMenuRW;
+    } else if (menu[0] === "00") {
+      response = `CON Hitamo ururimi / Choose language:
+1. Icyongereza
+2. Ikinyarwanda`;
+    } else {
+      response = `END Ibyinjijwe si byo`;
+    }
   }
 
   else {
@@ -202,5 +221,5 @@ n. Next
 });
 
 app.listen(port, () => {
-  console.log(`USSD app listening on port ${port}`);
+  console.log(`USSD app running on port ${port}`);
 });
